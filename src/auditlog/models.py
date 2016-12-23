@@ -1,6 +1,7 @@
 from __future__ import unicode_literals
 
 import json
+import time
 
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericRelation
@@ -10,11 +11,27 @@ from django.db.models import QuerySet, Q
 from django.utils.encoding import python_2_unicode_compatible, smart_text
 from django.utils.six import iteritems, integer_types
 from django.utils.translation import ugettext_lazy as _
+from django.db import OperationalError
 
 from jsonfield.fields import JSONField
 
 
-class LogEntryManager(models.Manager):
+class DeadLockFreeManager(models.Manager):
+
+    def create(self, **kwargs):
+        attempts = 0
+        while attempts < 3:
+            try:
+                return super(DeadLockFreeManager, self).create(**kwargs)
+            except OperationalError as e:
+                code = e.args[0]
+                if attempts == 2 or code != 1213:
+                    raise e
+                attempts += 1
+                time.sleep(0.2)
+
+
+class LogEntryManager(DeadLockFreeManager):
     """
     Custom manager for the :py:class:`LogEntry` model.
     """
